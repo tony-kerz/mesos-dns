@@ -24,6 +24,11 @@ install it in order to build from source.
 
 ```shell
 $ go get github.com/tools/godep
+
+$ mkdir -p $GOPATH/src/github.com/mesosphere
+$ cd $GOPATH/src/github.com/mesosphere
+$ git clone git@github.com:{account-you-forked-from}/mesos-dns.git
+$ cd mesos-dns/
 $ godep go build ./...
 ```
 
