@@ -34,6 +34,13 @@ type Resolver struct {
 	extResolver exchanger.Exchanger
 }
 
+type serviceRecord struct {
+	Service string `json:"service"`
+	Host    string `json:"host"`
+	IP      string `json:"ip"`
+	Port    string `json:"port"`
+}
+
 // New returns a Resolver with the given version and configuration.
 func New(version string, config records.Config) *Resolver {
 	r := &Resolver{
@@ -453,6 +460,7 @@ func (res *Resolver) configureHTTP() {
 	ws.Route(ws.GET("/v1/config").To(res.RestConfig))
 	ws.Route(ws.GET("/v1/hosts/{host}").To(res.RestHost))
 	ws.Route(ws.GET("/v1/hosts/{host}/ports").To(res.RestPorts))
+	ws.Route(ws.GET("/v1/services").To(res.RestServices))
 	ws.Route(ws.GET("/v1/services/{service}").To(res.RestService))
 	restful.Add(ws)
 }
@@ -562,26 +570,19 @@ func (res *Resolver) RestService(req *restful.Request, resp *restful.Response) {
 	}
 	rs := res.records()
 
-	type record struct {
-		Service string `json:"service"`
-		Host    string `json:"host"`
-		IP      string `json:"ip"`
-		Port    string `json:"port"`
-	}
-
 	srvRRs := rs.SRVs[dom]
-	records := make([]record, 0, len(srvRRs))
+	records := make([]serviceRecord, 0, len(srvRRs))
 	for _, s := range srvRRs {
 		host, port, _ := net.SplitHostPort(s)
 		var ip string
 		if r := rs.As[host]; len(r) != 0 {
 			ip = r[0]
 		}
-		records = append(records, record{service, host, ip, port})
+		records = append(records, serviceRecord{service, host, ip, port})
 	}
 
 	if len(records) == 0 {
-		records = append(records, record{})
+		records = append(records, serviceRecord{})
 	}
 
 	if err := resp.WriteAsJson(records); err != nil {
@@ -589,6 +590,31 @@ func (res *Resolver) RestService(req *restful.Request, resp *restful.Response) {
 	}
 
 	stats(dom, res.config.Domain+".", len(srvRRs) > 0)
+}
+
+// RestServices handles HTTP requests for enumeration of DNS SRV records.
+func (res *Resolver) RestServices(req *restful.Request, resp *restful.Response) {
+	var records []serviceRecord
+	rs := res.records()
+	SRVs := rs.SRVs
+	for dom, srvRRs := range SRVs {
+		for _, s := range srvRRs {
+			host, port, _ := net.SplitHostPort(s)
+			var ip string
+			if r := rs.As[host]; len(r) != 0 {
+				ip = r[0]
+			}
+			records = append(records, serviceRecord{dom, host, ip, port})
+		}
+	}
+
+	if len(records) == 0 {
+		records = append(records, serviceRecord{})
+	}
+
+	if err := resp.WriteAsJson(records); err != nil {
+		logging.Error.Println(err)
+	}
 }
 
 // panicRecover catches any panics from the resolvers and sets an error

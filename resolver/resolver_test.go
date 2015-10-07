@@ -21,6 +21,7 @@ import (
 	"github.com/mesosphere/mesos-dns/records/labels"
 	"github.com/mesosphere/mesos-dns/records/state"
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
 )
 
 func init() {
@@ -272,6 +273,51 @@ func TestHTTP(t *testing.T) {
 		} else {
 			_ = resp.Body.Close()
 		}
+	}
+}
+
+func TestServices(t *testing.T) {
+	// setup DNS server (just http)
+	res := fakeDNS(t)
+	res.version = "0.1.1"
+
+	res.configureHTTP()
+	srv := httptest.NewServer(http.DefaultServeMux)
+	defer srv.Close()
+
+	path := "/v1/services"
+	var gott struct {
+		got []map[string]string
+	}
+
+	if resp, err := http.Get(srv.URL + path); err != nil {
+		t.Error(err)
+	} else if got, want := resp.StatusCode, http.StatusOK; got != want {
+		t.Errorf("GET %s: StatusCode: got %d, want %d", path, got, want)
+	} else if err := json.NewDecoder(resp.Body).Decode(&gott.got); err != nil {
+		t.Error(err)
+	} else {
+		got := gott.got
+		assert.Equal(t, 37, len(got), "srv-recs")
+
+		type service struct {
+			host, ip, port string
+		}
+
+		serviceMap := make(map[string][]service)
+		for _, val := range got {
+			key := val["service"]
+			services := serviceMap[key]
+			serviceMap[key] = append(services, service{host: val["host"], ip: val["ip"], port: val["port"]})
+		}
+
+		assert.Equal(t, 24, len(serviceMap), "service-types")
+
+		recs := serviceMap["_liquor-store._tcp.marathon.mesos."]
+
+		assert.Equal(t, 4, len(recs), "service-recs")
+
+		_ = resp.Body.Close()
 	}
 }
 
